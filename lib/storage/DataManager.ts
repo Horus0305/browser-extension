@@ -112,8 +112,11 @@ export class DataManager {
       // Create data hash for integrity checking
       const dataHash = createDataHash(data);
       
+      // Serialize data to handle complex types like Map
+      const serializableData = this.serializeUsageData(data);
+
       // Encrypt the usage data
-      const encryptedData = encryptData(data, this.masterKey);
+      const encryptedData = encryptData(serializableData, this.masterKey);
       
       // Save to storage
       await setStorageData({
@@ -504,61 +507,56 @@ export class DataManager {
     };
   }
 
-  private deserializeUsageData(data: UsageData): UsageData {
-    // Convert serialized objects back to proper structure
-    const processedData: UsageData = {
-      ...data,
-      websites: { ...data.websites },
-      dailyStats: {}
-    };
-    
-    // Restore Date objects in top-level websites
-    Object.entries(processedData.websites).forEach(([domain, website]) => {
-      if (website && typeof (website as any).lastVisited === 'string') {
-        (processedData.websites as any)[domain] = {
-          ...website,
-          lastVisited: new Date((website as any).lastVisited)
-        } as any;
+  private serializeUsageData(data: UsageData): any {
+    const serializableData = JSON.parse(JSON.stringify(data));
+
+    Object.keys(serializableData.dailyStats).forEach(date => {
+      const dailyUsage = serializableData.dailyStats[date];
+      if (dailyUsage && dailyUsage.websites) {
+        const websitesMap = new Map(Object.entries(dailyUsage.websites));
+        (serializableData.dailyStats as any)[date].websites = Array.from(websitesMap.entries());
       }
     });
 
-    // Process daily stats to restore Map structures
-    Object.entries(data.dailyStats).forEach(([date, dailyUsage]) => {
-      let websitesMap: Map<string, WebsiteUsage>;
-      
-      // Handle both serialized Map (as object) and already-deserialized Map
-      if (dailyUsage.websites instanceof Map) {
-        websitesMap = dailyUsage.websites;
-      } else if (dailyUsage.websites && typeof dailyUsage.websites === 'object') {
-        // Check if it's a serialized Map (has entries property) or a plain object
-        const websitesObj = dailyUsage.websites as any;
-        if (Array.isArray(websitesObj)) {
-          // It's already in Map entries format
-          websitesMap = new Map(websitesObj);
-        } else {
-          // It's a plain object, convert to Map
-          websitesMap = new Map(Object.entries(websitesObj));
+    return serializableData;
+  }
+
+  private deserializeUsageData(data: any): UsageData {
+    const processedData: UsageData = { ...data, dailyStats: {} };
+
+    // Restore Date objects in top-level websites
+    if (processedData.websites) {
+      Object.entries(processedData.websites).forEach(([domain, website]) => {
+        if (website && typeof (website as any).lastVisited === 'string') {
+          (processedData.websites as any)[domain].lastVisited = new Date((website as any).lastVisited);
         }
-      } else {
-        websitesMap = new Map();
-      }
-      
-      // Restore Date objects in website entries
-      const processedWebsitesMap = new Map<string, WebsiteUsage>();
-      websitesMap.forEach((usage, domain) => {
-        processedWebsitesMap.set(domain, {
-          ...usage,
-          lastVisited: typeof (usage as any).lastVisited === 'string'
-            ? new Date((usage as any).lastVisited)
-            : (usage as any).lastVisited
-        });
       });
-      
-      processedData.dailyStats[date] = {
-        ...dailyUsage,
-        websites: processedWebsitesMap
-      };
-    });
+    }
+
+    // Process daily stats to restore Map structures
+    if (data.dailyStats) {
+      Object.entries(data.dailyStats).forEach(([date, dailyUsage]: [string, any]) => {
+        let websitesMap: Map<string, WebsiteUsage>;
+
+        if (Array.isArray(dailyUsage.websites)) {
+          websitesMap = new Map(dailyUsage.websites);
+        } else {
+          websitesMap = new Map();
+        }
+
+        // Restore Date objects in website entries
+        websitesMap.forEach((usage, domain) => {
+          if (typeof (usage as any).lastVisited === 'string') {
+            (usage as any).lastVisited = new Date((usage as any).lastVisited);
+          }
+        });
+
+        processedData.dailyStats[date] = {
+          ...dailyUsage,
+          websites: websitesMap
+        };
+      });
+    }
     
     return processedData;
   }
