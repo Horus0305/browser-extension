@@ -14,12 +14,47 @@ import {
   WifiOff
 } from "lucide-react";
 import { useAppwriteAuth } from "@/lib/hooks/useAppwriteAuth";
-import { useUsageData } from "@/lib/hooks/useUsageData";
 import { formatHoursMinutes } from "@/lib/time-utils";
 import { LoginForm } from "./components/LoginForm";
 import { WebsiteRankings } from "./components/WebsiteRankings";
-import { appwriteAuth } from "@/lib/appwrite/AppwriteAuth";
-import { dataManager } from "@/lib/storage/DataManager";
+import type { WebsiteUsage } from "@/lib/types";
+
+// Dummy data for UI demonstration
+const dummyWebsites: WebsiteUsage[] = [
+  {
+    domain: "github.com",
+    timeSpent: 7200000, // 2 hours
+    lastVisited: new Date(),
+    visitCount: 15
+  },
+  {
+    domain: "stackoverflow.com",
+    timeSpent: 5400000, // 1.5 hours
+    lastVisited: new Date(),
+    visitCount: 8
+  },
+  {
+    domain: "youtube.com",
+    timeSpent: 3600000, // 1 hour
+    lastVisited: new Date(),
+    visitCount: 5
+  },
+  {
+    domain: "twitter.com",
+    timeSpent: 2700000, // 45 minutes
+    lastVisited: new Date(),
+    visitCount: 12
+  },
+  {
+    domain: "reddit.com",
+    timeSpent: 1800000, // 30 minutes
+    lastVisited: new Date(),
+    visitCount: 3
+  }
+];
+
+const dummyTodayTotalTime = 20700000; // 5 hours 45 minutes
+const dummyWeekTotalTime = 144900000; // About 40 hours
 
 function App() {
   // Handle OAuth messages from callback page
@@ -53,21 +88,13 @@ function App() {
     clearError,
     forceRefresh
   } = useAppwriteAuth();
-  const {
-    getTodayWebsites,
-    getTodayTotalTime,
-    getUsageStats,
-    addWebsiteTime,
-    isLoading: dataLoading,
-    error: dataError
-  } = useUsageData();
 
-  const todayWebsites = getTodayWebsites();
-  const todayTotalTime = getTodayTotalTime();
-  const usageStats = getUsageStats();
+  // Use dummy data instead of real tracking data
+  const todayWebsites = dummyWebsites;
+  const todayTotalTime = dummyTodayTotalTime;
   
-  const isLoading = authLoading || dataLoading;
-  const hasError = authError || dataError;
+  const isLoading = authLoading;
+  const hasError = authError;
 
   const handleDetailedReport = () => {
     // Open analytics page in new tab
@@ -131,7 +158,7 @@ function App() {
           <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              {authError || dataError}
+              {authError}
             </AlertDescription>
           </Alert>
         )}
@@ -201,7 +228,7 @@ function App() {
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            {authError || dataError}
+            {authError}
           </AlertDescription>
         </Alert>
       )}
@@ -232,7 +259,7 @@ function App() {
               <Skeleton className="h-6 w-16" />
             ) : (
               <div className="text-lg font-semibold text-gray-900">
-                {formatHoursMinutes(usageStats.averageDailyTime * 7)}
+                {formatHoursMinutes(dummyWeekTotalTime)}
               </div>
             )}
           </div>
