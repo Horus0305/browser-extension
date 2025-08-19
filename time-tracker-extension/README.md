@@ -38,7 +38,7 @@ This is a browser extension that tracks the time you spend on different websites
 -   `content.js`: A script injected into every webpage to detect user activity.
 -   `popup/`: This directory contains the files for the popup UI.
     -   `popup.html`: The HTML structure of the popup.
-    -   `popup.js`: The script that fetches and displays your tracking data.
+    -   `src/popup/main.js`: The script that fetches and displays your tracking data.
     -   `popup.css`: The stylesheet for the popup.
 -   `icons/`: This directory is intended for the extension's icons.
 -   `README.md`: This file.
