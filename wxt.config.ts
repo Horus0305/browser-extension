@@ -22,7 +22,9 @@ export default defineConfig({
       'tabs', 
       'storage', 
       'activeTab',
-      'identity'
+      'identity',
+      'webNavigation',
+      'alarms'
     ],
     host_permissions: [
       'https://cloud.appwrite.io/*',

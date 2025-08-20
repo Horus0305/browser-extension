@@ -14,3 +14,6 @@ export * from './hooks/useAppwriteAuth';
 
 // Appwrite
 export * from './appwrite';
+
+// Categories
+export * from './categories';
