@@ -1,25 +1,83 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { 
   Shield, 
-  Eye, 
-  EyeOff, 
-  Globe, 
-  Lock,
-  UserX,
-  Database,
-  AlertTriangle
+  Lock
 } from "lucide-react";
 
 export function PrivacySettings() {
-  const [trackingEnabled, setTrackingEnabled] = useState(true);
-  const [shareAnonymousData, setShareAnonymousData] = useState(false);
-  const [allowAnalytics, setAllowAnalytics] = useState(true);
-  const [incognitoTracking, setIncognitoTracking] = useState(false);
+  const [exclusions, setExclusions] = useState<string[]>([]);
+  const [newDomain, setNewDomain] = useState("");
+
+  function getRuntime(): any {
+    return (globalThis as any).browser?.runtime || (globalThis as any).chrome?.runtime;
+  }
+
+  async function sendMessage<TRes = any>(msg: any): Promise<TRes> {
+    const runtime = getRuntime();
+    if (!runtime?.sendMessage) throw new Error("runtime messaging not available");
+    const isPromiseApi = !!(globalThis as any).browser;
+    return new Promise<TRes>((resolve, reject) => {
+      try {
+        if (isPromiseApi) {
+          runtime.sendMessage(msg).then(resolve).catch(reject);
+        } else {
+          runtime.sendMessage(msg, (res: any) => {
+            const err = (globalThis as any).chrome?.runtime?.lastError;
+            if (err) reject(err);
+            else resolve(res);
+          });
+        }
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await sendMessage<{ exclusions: string[] }>({ type: 'GET_EXCLUSIONS' });
+        if (!cancelled) setExclusions(res?.exclusions || []);
+      } catch {
+        if (!cancelled) setExclusions([]);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  const normalizedNew = useMemo(() => {
+    try {
+      if (!newDomain) return "";
+      const url = newDomain.includes('://') ? newDomain : `https://${newDomain}`;
+      const u = new URL(url);
+      let host = u.hostname.toLowerCase();
+      if (host.startsWith('www.')) host = host.slice(4);
+      return host;
+    } catch {
+      return "";
+    }
+  }, [newDomain]);
+
+  async function addExclusion() {
+    const domain = normalizedNew;
+    if (!domain) return;
+    try {
+      await sendMessage({ type: 'ADD_EXCLUSION', domain });
+      setExclusions((prev) => Array.from(new Set([domain, ...prev])));
+      setNewDomain("");
+    } catch {}
+  }
+
+  async function removeExclusion(domain: string) {
+    try {
+      await sendMessage({ type: 'REMOVE_EXCLUSION', domain });
+      setExclusions((prev) => prev.filter((d) => d !== domain));
+    } catch {}
+  }
 
   return (
     <div className="space-y-6">
@@ -47,77 +105,6 @@ export function PrivacySettings() {
         </CardContent>
       </Card>
 
-      {/* Data Collection Settings */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Data Collection</CardTitle>
-          <CardDescription>
-            Configure what data the extension collects
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Eye className="h-4 w-4 text-gray-500" />
-              <div>
-                <Label htmlFor="tracking">Website Tracking</Label>
-                <p className="text-xs text-gray-500">Track time spent on websites</p>
-              </div>
-            </div>
-            <Switch
-              id="tracking"
-              checked={trackingEnabled}
-              onCheckedChange={setTrackingEnabled}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <UserX className="h-4 w-4 text-gray-500" />
-              <div>
-                <Label htmlFor="incognito">Incognito Mode Tracking</Label>
-                <p className="text-xs text-gray-500">Track browsing in private/incognito mode</p>
-              </div>
-            </div>
-            <Switch
-              id="incognito"
-              checked={incognitoTracking}
-              onCheckedChange={setIncognitoTracking}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Database className="h-4 w-4 text-gray-500" />
-              <div>
-                <Label htmlFor="analytics">Usage Analytics</Label>
-                <p className="text-xs text-gray-500">Help improve the extension with anonymous usage data</p>
-              </div>
-            </div>
-            <Switch
-              id="analytics"
-              checked={allowAnalytics}
-              onCheckedChange={setAllowAnalytics}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Globe className="h-4 w-4 text-gray-500" />
-              <div>
-                <Label htmlFor="share-data">Anonymous Data Sharing</Label>
-                <p className="text-xs text-gray-500">Share aggregated, anonymous data for research</p>
-              </div>
-            </div>
-            <Switch
-              id="share-data"
-              checked={shareAnonymousData}
-              onCheckedChange={setShareAnonymousData}
-            />
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Blocked Websites */}
       <Card>
         <CardHeader>
@@ -128,55 +115,29 @@ export function PrivacySettings() {
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Lock className="h-4 w-4 text-gray-500" />
-                <span className="text-sm">banking-site.com</span>
-                <Badge variant="secondary" className="text-xs">Sensitive</Badge>
-              </div>
-              <Button variant="ghost" size="sm">Remove</Button>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 h-9 px-3 rounded-md border border-gray-300 text-sm bg-white"
+                placeholder="Enter domain e.g. banking-site.com"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+              />
+              <Button variant="outline" onClick={addExclusion} disabled={!normalizedNew}>Add</Button>
             </div>
-            
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-3">
-                <Lock className="h-4 w-4 text-gray-500" />
-                <span className="text-sm">private-workspace.com</span>
-                <Badge variant="secondary" className="text-xs">Work</Badge>
-              </div>
-              <Button variant="ghost" size="sm">Remove</Button>
-            </div>
-          </div>
-          
-          <Button variant="outline" className="w-full mt-4">
-            Add Website to Exclusions
-          </Button>
-        </CardContent>
-      </Card>
 
-      {/* Data Rights */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Your Data Rights</CardTitle>
-          <CardDescription>
-            Manage your data and privacy rights
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Button variant="outline" className="h-auto p-4 flex flex-col items-center gap-2">
-              <Database className="h-5 w-5" />
-              <span className="text-sm">Export My Data</span>
-            </Button>
-            
-            <Button variant="outline" className="h-auto p-4 flex flex-col items-center gap-2">
-              <EyeOff className="h-5 w-5" />
-              <span className="text-sm">Request Deletion</span>
-            </Button>
-            
-            <Button variant="outline" className="h-auto p-4 flex flex-col items-center gap-2">
-              <AlertTriangle className="h-5 w-5" />
-              <span className="text-sm">Report Issue</span>
-            </Button>
+            {exclusions.length === 0 && (
+              <div className="p-3 text-sm text-gray-600 bg-gray-50 rounded">No exclusions yet.</div>
+            )}
+
+            {exclusions.map((domain) => (
+              <div key={domain} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div className="flex items-center gap-3">
+                  <Lock className="h-4 w-4 text-gray-500" />
+                  <span className="text-sm">{domain}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={() => removeExclusion(domain)}>Remove</Button>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

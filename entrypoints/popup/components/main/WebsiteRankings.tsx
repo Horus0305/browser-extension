@@ -3,6 +3,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { WebsiteUsage } from "@/lib/types";
 import { formatHoursMinutes, formatPercentage, calculatePercentage } from "@/lib/time-utils";
+import type { Category } from "@/lib/categories";
 
 interface WebsiteRankingsProps {
   websites: WebsiteUsage[];
@@ -12,6 +13,27 @@ interface WebsiteRankingsProps {
 
 export function WebsiteRankings({ websites, totalTime, isLoading }: WebsiteRankingsProps) {
   const topWebsites = websites.slice(0, 5); // Show top 5 websites
+
+  // Simple category -> color map (kept local to avoid broad API changes)
+  const categoryColors: Record<Category, string> = {
+    social: "#3b82f6", // blue
+    video: "#ef4444", // red
+    music: "#f59e0b", // amber
+    productivity: "#10b981", // emerald
+    developer: "#6366f1", // indigo
+    communication: "#06b6d4", // cyan
+    news: "#8b5cf6", // violet
+    shopping: "#ec4899", // pink
+    education: "#22c55e", // green
+    finance: "#14b8a6", // teal
+    search: "#a3a3a3", // gray
+    uncategorized: "#9ca3af", // gray-400
+  };
+
+  function toTitleCase(s?: string) {
+    if (!s) return "Uncategorized";
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
 
   if (isLoading) {
     return (
@@ -44,7 +66,7 @@ export function WebsiteRankings({ websites, totalTime, isLoading }: WebsiteRanki
           <h2 className="text-lg font-semibold text-gray-900">
             Top Websites
           </h2>
-          <Badge variant="secondary">Today</Badge>
+          <Badge variant="default">Today</Badge>
         </div>
         <div className="text-center py-8 text-gray-500">
           <div className="text-sm">No browsing data for today</div>
@@ -56,7 +78,7 @@ export function WebsiteRankings({ websites, totalTime, isLoading }: WebsiteRanki
 
   return (
     <div className="mb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-2">
         <h2 className="text-lg font-semibold text-gray-900">
           Top Websites
         </h2>
@@ -67,10 +89,10 @@ export function WebsiteRankings({ websites, totalTime, isLoading }: WebsiteRanki
         <TableBody>
           {topWebsites.map((website, index) => {
             const percentage = calculatePercentage(website.timeSpent, totalTime);
-            
+            const color = categoryColors[(website.category as Category) || "uncategorized"];
             return (
               <TableRow key={website.domain} className="border-0">
-                <TableCell className="px-0 py-2">
+                <TableCell className="px-0 py-1">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 bg-gray-100 rounded-full flex items-center justify-center text-xs font-medium text-gray-600">
                       {index + 1}
@@ -79,8 +101,19 @@ export function WebsiteRankings({ websites, totalTime, isLoading }: WebsiteRanki
                       <div className="text-sm font-medium text-gray-700">
                         {website.domain}
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {website.visitCount} visit{website.visitCount !== 1 ? 's' : ''}
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <div className="text-xs text-gray-500">
+                          {website.visitCount} visit{website.visitCount !== 1 ? 's' : ''}
+                        </div>
+                        {(
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-5">
+                            <span
+                              className="inline-block w-2 h-2 rounded-full mr-1"
+                              style={{ backgroundColor: color }}
+                            />
+                            {toTitleCase(website.category)}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </div>

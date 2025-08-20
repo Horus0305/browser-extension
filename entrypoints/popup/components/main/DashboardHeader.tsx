@@ -15,7 +15,7 @@ interface DashboardHeaderProps {
 
 export function DashboardHeader({ isAuthenticated, isOnline, onSignOut }: DashboardHeaderProps) {
   return (
-    <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center justify-between">
       <div className="flex items-center gap-2">
         <div className="w-7 h-7 bg-black rounded-full flex items-center justify-center">
           <Globe className="h-4 w-4 text-white" />

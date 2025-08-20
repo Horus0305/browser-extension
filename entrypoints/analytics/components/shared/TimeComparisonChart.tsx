@@ -19,25 +19,20 @@ ChartJS.register(
   Legend
 );
 
-export function TimeComparisonChart() {
-  // Comparison data: current vs previous periods
-  const comparisonData = {
-    today: { current: 6.2, previous: 4.8, label: 'Today vs Yesterday' },
-    thisWeek: { current: 28.0, previous: 32.0, label: 'This Week vs Last Week' },
-    thisMonth: { current: 120.5, previous: 110.2, label: 'This Month vs Last Month' }
-  };
-
-  // Calculate percentage changes
-  const todayChange = ((comparisonData.today.current - comparisonData.today.previous) / comparisonData.today.previous * 100);
-  const weekChange = ((comparisonData.thisWeek.current - comparisonData.thisWeek.previous) / comparisonData.thisWeek.previous * 100);
-  const monthChange = ((comparisonData.thisMonth.current - comparisonData.thisMonth.previous) / comparisonData.thisMonth.previous * 100);
+export function TimeComparisonChart({
+  data,
+}: {
+  data?: Array<{ label: string; currentMs: number; previousMs: number }>;
+}) {
+  const hasData = !!(data && data.length > 0);
+  const items = hasData ? (data as Array<{ label: string; currentMs: number; previousMs: number }>) : [];
 
   const chartData = {
-    labels: ['Today vs Yesterday', 'This Week vs Last Week', 'This Month vs Last Month'],
+    labels: items.map((i) => i.label),
     datasets: [
       {
         label: 'Current Period',
-        data: [comparisonData.today.current, comparisonData.thisWeek.current, comparisonData.thisMonth.current],
+        data: items.map((i) => i.currentMs / 3600000),
         backgroundColor: 'rgba(59, 130, 246, 0.8)',
         borderColor: 'rgba(59, 130, 246, 1)',
         borderWidth: 1,
@@ -46,7 +41,7 @@ export function TimeComparisonChart() {
       },
       {
         label: 'Previous Period',
-        data: [comparisonData.today.previous, comparisonData.thisWeek.previous, comparisonData.thisMonth.previous],
+        data: items.map((i) => i.previousMs / 3600000),
         backgroundColor: 'rgba(156, 163, 175, 0.6)',
         borderColor: 'rgba(156, 163, 175, 1)',
         borderWidth: 1,
@@ -151,40 +146,49 @@ export function TimeComparisonChart() {
         </CardDescription>
       </CardHeader>
       <CardContent className="pb-6">
-        <div className="h-64 mb-4">
-          <Bar data={chartData} options={options} />
+        <div className="relative h-64 mb-4">
+          {hasData ? (
+            <Bar data={chartData} options={options} />
+          ) : (
+            <div className="h-full w-full rounded-md bg-muted/30" />
+          )}
+          {!hasData && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+              <div className="text-center">
+                <div className="text-sm font-medium text-foreground">Not enough data yet</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Keep using the browser to unlock comparison insights.
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         
         {/* Comparison Stats */}
-        <div className="grid grid-cols-1 gap-3">
-          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">Today vs Yesterday</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {comparisonData.today.current}h vs {comparisonData.today.previous}h
-              </span>
-              <span className={`text-sm font-medium ${getChangeColor(todayChange)}`}>
-                {getChangeIcon(todayChange)} {Math.abs(todayChange).toFixed(1)}%
-              </span>
-            </div>
+        {hasData && (
+          <div className="grid grid-cols-1 gap-3">
+            {items.map((it, idx) => {
+              const currentH = it.currentMs / 3600000;
+              const previousH = it.previousMs / 3600000;
+              const change = it.previousMs > 0 ? ((it.currentMs - it.previousMs) / it.previousMs) * 100 : 0;
+              return (
+                <div key={idx} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{it.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">
+                      {currentH.toFixed(1)}h vs {previousH.toFixed(1)}h
+                    </span>
+                    <span className={`text-sm font-medium ${getChangeColor(change)}`}>
+                      {getChangeIcon(change)} {Math.abs(change).toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          
-          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium">This Week vs Last Week</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                {comparisonData.thisWeek.current}h vs {comparisonData.thisWeek.previous}h
-              </span>
-              <span className={`text-sm font-medium ${getChangeColor(weekChange)}`}>
-                {getChangeIcon(weekChange)} {Math.abs(weekChange).toFixed(1)}%
-              </span>
-            </div>
-          </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );

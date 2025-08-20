@@ -23,33 +23,26 @@ ChartJS.register(
   Filler
 );
 
-export function WeeklyTrendChart() {
-  // Generate last 7 days data with actual dates
-  const generateLast7Days = () => {
-    const days = [];
-    const data = [];
-    const today = new Date();
-    
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(today.getDate() - i);
-      
-      // Format as "Mon 14" or "Tue 15" etc.
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-      const dayNumber = date.getDate();
-      days.push(`${dayName} ${dayNumber}`);
-      
-      // Generate realistic daily usage data (3-8 hours)
-      const baseUsage = 5.5;
-      const variation = (Math.random() - 0.5) * 3; // ±1.5 hours
-      const weekendBoost = (date.getDay() === 0 || date.getDay() === 6) ? 1.2 : 1; // Weekend boost
-      data.push(Math.max(2, Math.min(9, (baseUsage + variation) * weekendBoost)));
-    }
-    
-    return { days, data };
-  };
+export function WeeklyTrendChart({ daily }: { daily?: { date: string; totalMs: number }[] }) {
+  // Use real daily data when available; otherwise show overlay instead of fake data
+  const minDaysRequired = 3; // Require at least 3 non-zero days for a meaningful trend
+  const availableDays = Array.isArray(daily)
+    ? (daily as { date: string; totalMs: number }[]).reduce((acc, d) => acc + (d.totalMs > 0 ? 1 : 0), 0)
+    : 0;
+  const hasEnoughData = availableDays >= minDaysRequired;
 
-  const { days, data: trendData } = generateLast7Days();
+  const days = hasEnoughData
+    ? (daily as { date: string; totalMs: number }[]).map((d) => {
+        const dt = new Date(d.date);
+        const dn = dt.toLocaleDateString('en-US', { weekday: 'short' });
+        const num = dt.getDate();
+        return `${dn} ${num}`;
+      })
+    : [];
+
+  const trendData = hasEnoughData
+    ? (daily as { date: string; totalMs: number }[]).map((d) => d.totalMs / 3600000)
+    : [];
 
   const data = {
     labels: days,
@@ -117,22 +110,13 @@ export function WeeklyTrendChart() {
         },
         callbacks: {
           title: function(context: any) {
-            const today = new Date();
-            const dayIndex = context[0].dataIndex;
-            const date = new Date(today);
-            date.setDate(today.getDate() - (6 - dayIndex));
-            
-            if (dayIndex === 6) return 'Today';
-            if (dayIndex === 5) return 'Yesterday';
-            return date.toLocaleDateString('en-US', { 
-              weekday: 'long', 
-              month: 'short', 
-              day: 'numeric' 
-            });
+            // Use label from dataset when real data exists
+            return context?.[0]?.label ?? 'Daily usage';
           },
           label: function(context: any) {
-            const hours = Math.floor(context.parsed.y);
-            const minutes = Math.round((context.parsed.y - hours) * 60);
+            const y = context?.parsed?.y ?? 0;
+            const hours = Math.floor(y);
+            const minutes = Math.round((y - hours) * 60);
             return `${hours}h ${minutes}m browsing time`;
           }
         }
@@ -196,11 +180,12 @@ export function WeeklyTrendChart() {
     }
   };
 
-  // Calculate today vs yesterday comparison
-  const todayUsage = trendData[6];
-  const yesterdayUsage = trendData[5];
-  const dailyChange = ((todayUsage - yesterdayUsage) / yesterdayUsage * 100);
-  const weekAverage = trendData.reduce((sum, value) => sum + value, 0) / 7;
+  // Calculate today vs yesterday comparison (only when enough data exists)
+  const lastIdx = trendData.length - 1;
+  const todayUsage = lastIdx >= 0 ? trendData[lastIdx] : 0;
+  const yesterdayUsage = lastIdx >= 1 ? trendData[lastIdx - 1] : 0;
+  const dailyChange = yesterdayUsage > 0 ? ((todayUsage - yesterdayUsage) / yesterdayUsage * 100) : 0;
+  const weekAverage = trendData.length > 0 ? trendData.reduce((sum, value) => sum + value, 0) / trendData.length : 0;
 
   return (
     <Card className="shadow-sm">
@@ -211,24 +196,47 @@ export function WeeklyTrendChart() {
         </CardDescription>
       </CardHeader>
       <CardContent className="pb-6">
-        <div className="h-72">
-          <Line data={data} options={options} />
+        <div className="relative h-72">
+          {hasEnoughData ? (
+            <Line data={data} options={options} />
+          ) : (
+            <div className="h-full w-full rounded-md bg-muted/30" />
+          )}
+          {!hasEnoughData && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+              <div className="text-center">
+                <div className="text-sm font-medium text-foreground">Not enough data yet</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {availableDays === 0
+                    ? 'Start browsing to build your 7-day trend.'
+                    : `Keep using for ${Math.max(0, minDaysRequired - availableDays)} more day(s) to unlock this chart.`}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-          <div className="text-sm text-gray-600">
-            <span className="font-medium">Daily average: </span>
-            <span className="font-semibold text-gray-800">
-              {Math.floor(weekAverage)}h {Math.round((weekAverage - Math.floor(weekAverage)) * 60)}m
-            </span>
+        {hasEnoughData ? (
+          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+            <div className="text-sm text-gray-600">
+              <span className="font-medium">Daily average: </span>
+              <span className="font-semibold text-gray-800">
+                {Math.floor(weekAverage)}h {Math.round((weekAverage - Math.floor(weekAverage)) * 60)}m
+              </span>
+            </div>
+            <div className="text-sm">
+              <span className="text-gray-600">vs yesterday: </span>
+              <span className={`font-semibold ${dailyChange >= 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                {dailyChange >= 0 ? '+' : ''}{dailyChange.toFixed(1)}%
+              </span>
+            </div>
           </div>
-          <div className="text-sm">
-            <span className="text-gray-600">vs yesterday: </span>
-            <span className={`font-semibold ${dailyChange >= 0 ? 'text-orange-600' : 'text-green-600'}`}>
-              {dailyChange >= 0 ? '+' : ''}{dailyChange.toFixed(1)}%
-            </span>
+        ) : (
+          <div className="mt-4 pt-4 border-t border-gray-100 text-xs text-muted-foreground text-center">
+            Collect a few days of activity to see detailed insights here.
           </div>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
 }
+

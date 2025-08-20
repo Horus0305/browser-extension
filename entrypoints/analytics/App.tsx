@@ -1,83 +1,237 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { useAppwriteAuth } from "@/lib/hooks/useAppwriteAuth";
-import { Header, AuthRequired, LoadingView } from "./components/shared";
+import { AuthRequired, LoadingView } from "./components/shared";
 import { DashboardView } from "./components/dashboard";
 import { ReportsView } from "./components/reports";
 import { SettingsView } from "./components/settings";
 import type { WebsiteUsage } from "@/lib/types";
+import type { Category } from "@/lib/categories";
 
-// Dummy data for detailed analytics
-const dummyDetailedData: WebsiteUsage[] = [
-  {
-    domain: "github.com",
-    timeSpent: 25200000, // 7 hours
-    lastVisited: new Date(),
-    visitCount: 45
-  },
-  {
-    domain: "stackoverflow.com",
-    timeSpent: 18000000, // 5 hours
-    lastVisited: new Date(),
-    visitCount: 32
-  },
-  {
-    domain: "youtube.com",
-    timeSpent: 14400000, // 4 hours
-    lastVisited: new Date(),
-    visitCount: 28
-  },
-  {
-    domain: "twitter.com",
-    timeSpent: 10800000, // 3 hours
-    lastVisited: new Date(),
-    visitCount: 52
-  },
-  {
-    domain: "reddit.com",
-    timeSpent: 7200000, // 2 hours
-    lastVisited: new Date(),
-    visitCount: 18
-  },
-  {
-    domain: "linkedin.com",
-    timeSpent: 5400000, // 1.5 hours
-    lastVisited: new Date(),
-    visitCount: 12
-  },
-  {
-    domain: "medium.com",
-    timeSpent: 3600000, // 1 hour
-    lastVisited: new Date(),
-    visitCount: 8
-  },
-  {
-    domain: "dev.to",
-    timeSpent: 2700000, // 45 minutes
-    lastVisited: new Date(),
-    visitCount: 6
-  }
-];
+type TodayUsageRes = {
+  date: string;
+  totalMs: number;
+  websites: Array<{
+    domain: string;
+    timeSpent: number;
+    lastVisited: number;
+    visitCount: number;
+    category?: Category;
+  }>;
+};
 
-const dummyWeeklyStats = {
-  totalTime: 518400000, // About 144 hours
-  totalVisits: 234,
-  averageSessionTime: 2214285, // ~37 minutes
-  mostActiveDay: "Tuesday"
+type RangeUsageRes = {
+  totalMs: number;
+  daily: Array<{ date: string; totalMs: number }>;
+  domains: Array<{
+    domain: string;
+    timeSpent: number;
+    lastVisited: number;
+    visitCount: number;
+    category?: Category;
+  }>;
 };
 
 function App() {
   // Main analytics app component
   const [activeTab, setActiveTab] = useState("dashboard");
-  const { user, isAuthenticated, isLoading, signOut, error: authError } = useAppwriteAuth();
+  const { user, isAuthenticated, isLoading, signOut } = useAppwriteAuth();
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+  const [todayTotalMs, setTodayTotalMs] = useState(0);
+  const [todayWebsitesCount, setTodayWebsitesCount] = useState(0);
+  const [rangeWebsites, setRangeWebsites] = useState<WebsiteUsage[]>([]);
+  const [rangeDaily, setRangeDaily] = useState<Array<{ date: string; totalMs: number }>>([]);
+  const [weeklyStatsFull, setWeeklyStatsFull] = useState({
+    totalTime: 0,
+    totalVisits: 0,
+    averageSessionTime: 0,
+    mostActiveDay: "",
+  });
+  const [comparisonData, setComparisonData] = useState<Array<{ label: string; currentMs: number; previousMs: number }>>([]);
 
-  // Transform data to match expected interface
-  const websiteData = dummyDetailedData.map(site => ({
-    url: site.domain,
-    timeSpent: site.timeSpent,
-    visits: site.visitCount
-  }));
+  function getRuntime(): any {
+    return (globalThis as any).browser?.runtime || (globalThis as any).chrome?.runtime;
+  }
+
+  async function sendMessage<TRes = any>(msg: any): Promise<TRes> {
+    const runtime = getRuntime();
+    if (!runtime?.sendMessage) throw new Error("runtime messaging not available");
+    const isPromiseApi = !!(globalThis as any).browser;
+    return new Promise<TRes>((resolve, reject) => {
+      try {
+        if (isPromiseApi) {
+          runtime.sendMessage(msg).then(resolve).catch(reject);
+        } else {
+          runtime.sendMessage(msg, (res: any) => {
+            const err = (globalThis as any).chrome?.runtime?.lastError;
+            if (err) reject(err);
+            else resolve(res);
+          });
+        }
+      } catch (e) {
+        reject(e);
+      }
+    });
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchAnalytics() {
+      try {
+        setAnalyticsLoading(true);
+        const end = new Date();
+        const start = new Date();
+        start.setDate(end.getDate() - 6);
+        start.setHours(0, 0, 0, 0);
+        const rangePromise = sendMessage<RangeUsageRes>({
+          type: 'GET_RANGE_USAGE',
+          startDate: start.toISOString(),
+          endDate: end.toISOString(),
+        });
+        const todayPromise = sendMessage<TodayUsageRes>({ type: 'GET_TODAY_USAGE' });
+
+        // Helper date functions
+        const startOfWeek = (d: Date) => {
+          const dt = new Date(d);
+          const day = dt.getDay(); // 0 Sun .. 6 Sat
+          const diff = day === 0 ? -6 : 1 - day; // Monday as start of week
+          dt.setDate(dt.getDate() + diff);
+          dt.setHours(0, 0, 0, 0);
+          return dt;
+        };
+        const endOfPreviousWeek = (d: Date) => {
+          const sow = startOfWeek(d);
+          const e = new Date(sow);
+          e.setDate(sow.getDate() - 1); // Sunday of previous week
+          e.setHours(0, 0, 0, 0);
+          return e;
+        };
+        const startOfPreviousWeek = (d: Date) => {
+          const ePrev = endOfPreviousWeek(d);
+          const s = new Date(ePrev);
+          s.setDate(ePrev.getDate() - 6);
+          s.setHours(0, 0, 0, 0);
+          return s;
+        };
+        const startOfMonth = (d: Date) => {
+          const s = new Date(d.getFullYear(), d.getMonth(), 1);
+          s.setHours(0, 0, 0, 0);
+          return s;
+        };
+        const startOfPreviousMonth = (d: Date) => {
+          const s = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+          s.setHours(0, 0, 0, 0);
+          return s;
+        };
+        const endOfPreviousMonth = (d: Date) => {
+          const e = new Date(d.getFullYear(), d.getMonth(), 0); // day 0 of current month = last day of prev month
+          e.setHours(0, 0, 0, 0);
+          return e;
+        };
+
+        // Build comparison range promises
+        const now = new Date();
+        const yesterdayStart = new Date(now);
+        yesterdayStart.setDate(now.getDate() - 1);
+        yesterdayStart.setHours(0, 0, 0, 0);
+        const yesterdayEnd = new Date(yesterdayStart);
+
+        const thisWeekStart = startOfWeek(now);
+        const lastWeekStart = startOfPreviousWeek(now);
+        const lastWeekEnd = endOfPreviousWeek(now);
+
+        const thisMonthStart = startOfMonth(now);
+        const lastMonthStart = startOfPreviousMonth(now);
+        const lastMonthEnd = endOfPreviousMonth(now);
+
+        const yesterdayPromise = sendMessage<RangeUsageRes>({
+          type: 'GET_RANGE_USAGE',
+          startDate: yesterdayStart.toISOString(),
+          endDate: yesterdayEnd.toISOString(),
+        });
+        const thisWeekPromise = sendMessage<RangeUsageRes>({
+          type: 'GET_RANGE_USAGE',
+          startDate: thisWeekStart.toISOString(),
+          endDate: now.toISOString(),
+        });
+        const lastWeekPromise = sendMessage<RangeUsageRes>({
+          type: 'GET_RANGE_USAGE',
+          startDate: lastWeekStart.toISOString(),
+          endDate: lastWeekEnd.toISOString(),
+        });
+        const thisMonthPromise = sendMessage<RangeUsageRes>({
+          type: 'GET_RANGE_USAGE',
+          startDate: thisMonthStart.toISOString(),
+          endDate: now.toISOString(),
+        });
+        const lastMonthPromise = sendMessage<RangeUsageRes>({
+          type: 'GET_RANGE_USAGE',
+          startDate: lastMonthStart.toISOString(),
+          endDate: lastMonthEnd.toISOString(),
+        });
+
+        const [range, today, yesterday, thisWeek, lastWeek, thisMonth, lastMonth] = await Promise.all([
+          rangePromise,
+          todayPromise,
+          yesterdayPromise,
+          thisWeekPromise,
+          lastWeekPromise,
+          thisMonthPromise,
+          lastMonthPromise,
+        ]);
+        if (cancelled) return;
+
+        // Convert domains to WebsiteUsage with Date objects and sort by time desc
+        const domains: WebsiteUsage[] = (range.domains || [])
+          .map((d) => ({
+            domain: d.domain,
+            timeSpent: d.timeSpent,
+            lastVisited: new Date(d.lastVisited),
+            visitCount: d.visitCount,
+            category: d.category,
+          }))
+          .sort((a, b) => b.timeSpent - a.timeSpent);
+
+        const totalVisits = domains.reduce((sum, d) => sum + (d.visitCount || 0), 0);
+        const totalTime = range.totalMs || domains.reduce((sum, d) => sum + d.timeSpent, 0);
+        const averageSessionTime = totalVisits ? Math.floor(totalTime / totalVisits) : 0;
+        const mostActiveDay = (() => {
+          const daily = range.daily || [];
+          if (!daily.length) return '';
+          const maxDay = daily.reduce((acc, cur) => (cur.totalMs > acc.totalMs ? cur : acc), daily[0]);
+          const d = new Date(maxDay.date);
+          return d.toLocaleDateString('en-US', { weekday: 'long' });
+        })();
+
+        setRangeWebsites(domains);
+        setRangeDaily(range.daily || []);
+        setWeeklyStatsFull({ totalTime, totalVisits, averageSessionTime, mostActiveDay });
+        setTodayTotalMs(today.totalMs || 0);
+        setTodayWebsitesCount((today.websites || []).length);
+
+        // Build comparison data
+        const comp: Array<{ label: string; currentMs: number; previousMs: number }> = [
+          { label: 'Today', currentMs: today.totalMs || 0, previousMs: yesterday.totalMs || 0 },
+          { label: 'This Week', currentMs: thisWeek.totalMs || 0, previousMs: lastWeek.totalMs || 0 },
+          { label: 'This Month', currentMs: thisMonth.totalMs || 0, previousMs: lastMonth.totalMs || 0 },
+        ];
+        setComparisonData(comp);
+      } catch (e) {
+        // minimal fallback on error
+        setRangeWebsites([]);
+        setRangeDaily([]);
+        setWeeklyStatsFull({ totalTime: 0, totalVisits: 0, averageSessionTime: 0, mostActiveDay: '' });
+        setTodayTotalMs(0);
+        setTodayWebsitesCount(0);
+        setComparisonData([]);
+      } finally {
+        if (!cancelled) setAnalyticsLoading(false);
+      }
+    }
+
+    fetchAnalytics();
+    return () => { cancelled = true; };
+  }, []);
 
   if (isLoading) {
     return <LoadingView />;
@@ -167,22 +321,35 @@ function App() {
       <div className="flex-1 ml-64 overflow-auto bg-background">
         <main className="p-6">
           {activeTab === "dashboard" && (
-            <DashboardView 
-              websites={websiteData}
-              weeklyStats={dummyWeeklyStats}
-              user={user}
-            />
+            analyticsLoading ? (
+              <LoadingView />
+            ) : (
+              <DashboardView 
+                websites={rangeWebsites}
+                weeklyStats={{ totalTime: weeklyStatsFull.totalTime, totalVisits: weeklyStatsFull.totalVisits }}
+                user={user}
+                todayTotalMs={todayTotalMs}
+                todayWebsitesCount={todayWebsitesCount}
+                daily={rangeDaily}
+                comparisonData={comparisonData}
+              />
+            )
           )}
 
           {activeTab === "reports" && (
-            <ReportsView 
-              websites={dummyDetailedData}
-              weeklyStats={dummyWeeklyStats}
-            />
+            analyticsLoading ? (
+              <LoadingView />
+            ) : (
+              <ReportsView 
+                websites={rangeWebsites}
+                weeklyStats={weeklyStatsFull}
+                daily={rangeDaily}
+              />
+            )
           )}
 
           {activeTab === "settings" && (
-            <SettingsView user={user} />
+            <SettingsView user={user} websites={rangeWebsites} daily={rangeDaily} />
           )}
         </main>
       </div>

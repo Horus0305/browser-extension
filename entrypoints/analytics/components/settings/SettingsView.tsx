@@ -9,12 +9,15 @@ import {
 import { AccountSettings } from "./AccountSettings";
 import { PrivacySettings } from "./PrivacySettings";
 import { DataManagement } from "./DataManagement";
+import type { WebsiteUsage } from "@/lib/types";
 
 interface SettingsViewProps {
   user: any;
+  websites: WebsiteUsage[];
+  daily: Array<{ date: string; totalMs: number }>;
 }
 
-export function SettingsView({ user }: SettingsViewProps) {
+export function SettingsView({ user, websites, daily }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState("account");
 
   return (
@@ -56,7 +59,7 @@ export function SettingsView({ user }: SettingsViewProps) {
         </div>
 
         <TabsContent value="account" className="space-y-6">
-          <AccountSettings user={user} />
+          <AccountSettings user={user} websites={websites} daily={daily} />
         </TabsContent>
 
         <TabsContent value="privacy" className="space-y-6">

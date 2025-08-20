@@ -4,31 +4,26 @@ import { TopWebsitesChart } from "./TopWebsitesChart";
 import { ActivityChart } from "./ActivityChart";
 import { QuickActions } from "./QuickActions";
 import type { WebsiteUsage } from "@/lib/types";
+import type { Category } from "@/lib/categories";
+import { formatHoursMinutes } from "@/lib/time-utils";
 
 import { StatsCard, ProductivityChart, WeeklyTrendChart, TimeComparisonChart } from '../shared';
-
-interface Website {
-  url: string;
-  timeSpent: number;
-  visits: number;
-}
-
-interface WeeklyStats {
-  totalTime: number;
-  totalVisits: number;
-}
 
 interface User {
   name?: string;
 }
 
 interface DashboardViewProps {
-  websites: Website[];
-  weeklyStats: WeeklyStats;
+  websites: WebsiteUsage[];
+  weeklyStats: { totalTime: number; totalVisits: number };
   user: User | null;
+  todayTotalMs: number;
+  todayWebsitesCount: number;
+  daily: Array<{ date: string; totalMs: number }>;
+  comparisonData?: Array<{ label: string; currentMs: number; previousMs: number }>;
 }
 
-export function DashboardView({ websites, weeklyStats, user }: DashboardViewProps) {
+export function DashboardView({ websites, weeklyStats, user, todayTotalMs, todayWebsitesCount, daily, comparisonData }: DashboardViewProps) {
   // HIGH-IMPACT CHARTS STRATEGY:
   // 1. TopWebsitesChart - Most actionable: shows exactly where time is spent
   // 2. TimeComparisonChart - Immediate feedback: today vs yesterday progress  
@@ -38,51 +33,15 @@ export function DashboardView({ websites, weeklyStats, user }: DashboardViewProp
   // REMOVED: AverageUsageChart (redundant), TopCategoriesChart (redundant), 
   //          SessionsChart (complex, low actionability)
   
-  // Transform website data for Chart.js TopWebsitesChart
-  const topWebsitesData: WebsiteUsage[] = [
-    { 
-      domain: 'github.com', 
-      timeSpent: 25200000, // 7 hours in milliseconds (7 * 60 * 60 * 1000)
-      lastVisited: new Date(), 
-      visitCount: 45 
-    },
-    { 
-      domain: 'stackoverflow.com', 
-      timeSpent: 18600000, // 5h 10m in milliseconds
-      lastVisited: new Date(), 
-      visitCount: 32 
-    },
-    { 
-      domain: 'youtube.com', 
-      timeSpent: 14400000, // 4 hours in milliseconds
-      lastVisited: new Date(), 
-      visitCount: 28 
-    },
-    { 
-      domain: 'twitter.com', 
-      timeSpent: 10800000, // 3 hours in milliseconds
-      lastVisited: new Date(), 
-      visitCount: 52 
-    },
-    { 
-      domain: 'reddit.com', 
-      timeSpent: 7200000, // 2 hours in milliseconds
-      lastVisited: new Date(), 
-      visitCount: 18 
-    },
-    { 
-      domain: 'medium.com', 
-      timeSpent: 3600000, // 1 hour in milliseconds
-      lastVisited: new Date(), 
-      visitCount: 12 
-    },
-    { 
-      domain: 'dev.to', 
-      timeSpent: 2700000, // 45 minutes in milliseconds
-      lastVisited: new Date(), 
-      visitCount: 8 
-    },
-  ];
+  // Category breakdown from provided websites (weekly/range data)
+  const breakdownMap = websites.reduce<Record<Category | 'uncategorized', number>>((acc, w) => {
+    const cat = (w.category || 'uncategorized') as Category | 'uncategorized';
+    acc[cat] = (acc[cat] || 0) + (w.timeSpent || 0);
+    return acc;
+  }, {} as any);
+  const breakdown = Object.entries(breakdownMap)
+    .map(([category, ms]) => ({ category: category as Category | 'uncategorized', ms }))
+    .sort((a, b) => b.ms - a.ms);
 
   return (
     <div className="max-w-7xl mx-auto space-y-8">
@@ -100,28 +59,28 @@ export function DashboardView({ websites, weeklyStats, user }: DashboardViewProp
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatsCard
           title="Today's Usage"
-          value="4h 15m"
+          value={formatHoursMinutes(todayTotalMs)}
           subtitle="Active browsing time"
           progress={60}
           progressColor="blue"
         />
         <StatsCard
           title="This Week"
-          value="28h"
+          value={formatHoursMinutes(weeklyStats.totalTime)}
           subtitle="Total time spent"
           progress={75}
           progressColor="green"
         />
         <StatsCard
           title="Active Websites"
-          value="18"
+          value={String(todayWebsitesCount)}
           subtitle="Sites visited today"
           progress={45}
           progressColor="yellow"
         />
         <StatsCard
           title="Total Sessions"
-          value="234"
+          value={String(weeklyStats.totalVisits)}
           subtitle="Browsing sessions"
           progress={80}
           progressColor="red"
@@ -131,20 +90,21 @@ export function DashboardView({ websites, weeklyStats, user }: DashboardViewProp
       {/* High-Impact Charts Section - 4 focused, actionable charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 1: Top Websites - Most actionable, shows exactly where time is spent */}
-        <TopWebsitesChart websites={topWebsitesData} />
+        <TopWebsitesChart websites={websites} />
         
         {/* Chart 2: Time Comparison - Immediate feedback on progress */}
-        <TimeComparisonChart />
+        <TimeComparisonChart data={comparisonData} />
       </div>
 
       {/* Second Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Chart 3: Productivity Breakdown - Category overview with clear value */}
-        <ProductivityChart />
+        <ProductivityChart breakdown={breakdown} totalMs={weeklyStats.totalTime} />
         
         {/* Chart 4: Weekly Trend - Progress tracking over time */}
-        <WeeklyTrendChart />
+        <WeeklyTrendChart daily={daily} />
       </div>
     </div>
   );
 }
+

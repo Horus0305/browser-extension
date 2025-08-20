@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,26 +7,26 @@ import {
   User, 
   Mail, 
   Calendar,
-  Edit,
   Crown,
   Shield
 } from "lucide-react";
 
+import type { WebsiteUsage } from "@/lib/types";
+
 interface AccountSettingsProps {
   user: any;
+  websites: WebsiteUsage[];
+  daily: Array<{ date: string; totalMs: number }>;
 }
 
-export function AccountSettings({ user }: AccountSettingsProps) {
-  const [isEditing, setIsEditing] = useState(false);
-
-  const handleEditProfile = () => {
-    setIsEditing(!isEditing);
-  };
-
-  const handleSaveProfile = () => {
-    // TODO: Implement profile save
-    setIsEditing(false);
-  };
+export function AccountSettings({ user, websites, daily }: AccountSettingsProps) {
+  const stats = useMemo(() => {
+    const totalMs = (daily || []).reduce((a, d) => a + (d.totalMs || 0), 0);
+    const totalHours = totalMs / 3600000;
+    const uniqueWebsites = new Set((websites || []).map(w => w.domain)).size;
+    const daysActive = (daily || []).filter(d => (d.totalMs || 0) > 0).length;
+    return { totalHours, uniqueWebsites, daysActive };
+  }, [websites, daily]);
 
   return (
     <div className="space-y-6">
@@ -65,14 +65,7 @@ export function AccountSettings({ user }: AccountSettingsProps) {
               </div>
             </div>
             
-            <Button
-              variant="outline"
-              onClick={handleEditProfile}
-              className="flex items-center gap-2"
-            >
-              <Edit className="h-4 w-4" />
-              Edit Profile
-            </Button>
+            {/* Edit Profile removed per requirements */}
           </div>
         </CardContent>
       </Card>
@@ -88,15 +81,15 @@ export function AccountSettings({ user }: AccountSettingsProps) {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">145</div>
+              <div className="text-2xl font-bold text-blue-600">{stats.totalHours.toFixed(1)}</div>
               <div className="text-sm text-gray-600">Total Hours Tracked</div>
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">1,234</div>
+              <div className="text-2xl font-bold text-green-600">{stats.uniqueWebsites}</div>
               <div className="text-sm text-gray-600">Websites Visited</div>
             </div>
             <div className="text-center p-4 bg-gray-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">28</div>
+              <div className="text-2xl font-bold text-purple-600">{stats.daysActive}</div>
               <div className="text-sm text-gray-600">Days Active</div>
             </div>
           </div>

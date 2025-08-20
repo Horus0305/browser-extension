@@ -81,6 +81,56 @@ export default defineBackground(() => {
 
   const storage = api?.storage?.local;
 
+  // Exclusions management
+  const EXCLUSIONS_KEY = 'settings:exclusions';
+  let exclusionsSet = new Set<string>();
+
+  function normalizeHost(host?: string | null): string | null {
+    try {
+      if (!host) return null;
+      let h = host.toLowerCase();
+      if (h.startsWith('www.')) h = h.slice(4);
+      return h;
+    } catch {
+      return null;
+    }
+  }
+
+  async function readExclusions(): Promise<string[]> {
+    try {
+      if (!storage) return [];
+      const res = await promisify<any>(storage.get, storage, [EXCLUSIONS_KEY]);
+      const arr = res?.[EXCLUSIONS_KEY];
+      if (Array.isArray(arr)) return arr.filter(Boolean).map((d) => normalizeHost(d)!).filter(Boolean) as string[];
+      return [];
+    } catch {
+      return [];
+    }
+  }
+
+  function setExclusionsInMemory(list: string[]): void {
+    exclusionsSet = new Set((list || []).map((d) => normalizeHost(d)!).filter(Boolean) as string[]);
+  }
+
+  async function loadExclusions(): Promise<void> {
+    const list = await readExclusions();
+    setExclusionsInMemory(list);
+  }
+
+  function domainMatchesExclusion(domain: string, exclusion: string): boolean {
+    if (domain === exclusion) return true;
+    return domain.endsWith('.' + exclusion);
+  }
+
+  function isDomainExcluded(domain?: string | null): boolean {
+    const d = normalizeHost(domain || '');
+    if (!d) return false;
+    for (const ex of exclusionsSet) {
+      if (domainMatchesExclusion(d, ex)) return true;
+    }
+    return false;
+  }
+
   function toDateKey(d: Date): string {
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -226,6 +276,7 @@ export default defineBackground(() => {
     if (tab.incognito) return; // skip incognito by default
     const domain = normalizeDomainFromUrl(tab.url);
     if (!domain) return;
+    if (isDomainExcluded(domain)) return;
     const nowTs = Date.now();
     // count a visit only when desired (tab activation or navigation),
     // not on window refocus to avoid inflating on popup open
@@ -254,6 +305,11 @@ export default defineBackground(() => {
       }
       if (domain !== active.domain) {
         await flushActive(nowTs);
+        // If new domain is excluded, do not start tracking
+        if (isDomainExcluded(domain)) {
+          await clearActive();
+          return;
+        }
         // Start tracking new domain and count a visit (navigation)
         const dayKey = `usage:${toDateKey(new Date(nowTs))}`;
         await addDelta(dayKey, domain, 0, nowTs, true);
@@ -271,7 +327,11 @@ export default defineBackground(() => {
     if (focusedOk && tab.active) {
       // Flush any lingering active session from another tab before switching
       await flushActive(nowTs);
-      await startForTab(tabId, tab.windowId, true);
+      if (!isDomainExcluded(domain)) {
+        await startForTab(tabId, tab.windowId, true);
+      } else {
+        await clearActive();
+      }
     }
   }
 
@@ -493,6 +553,114 @@ export default defineBackground(() => {
         })();
         return true;
       }
+      if (type === 'GET_EXCLUSIONS') {
+        (async () => {
+          try {
+            const list = await readExclusions();
+            setExclusionsInMemory(list);
+            sendResponse({ exclusions: list });
+          } catch (e) {
+            sendResponse({ exclusions: [] });
+          }
+        })();
+        return true;
+      }
+      if (type === 'ADD_EXCLUSION') {
+        (async () => {
+          try {
+            const domain: string = normalizeHost(message.domain) || '';
+            if (!domain) {
+              sendResponse({ success: false, error: 'invalid domain' });
+              return;
+            }
+            const list = await readExclusions();
+            if (!list.includes(domain)) list.unshift(domain);
+            if (storage) await promisify<void>(storage.set, storage, { [EXCLUSIONS_KEY]: list });
+            setExclusionsInMemory(list);
+            sendResponse({ success: true, exclusions: list });
+          } catch (e) {
+            sendResponse({ success: false, error: String(e) });
+          }
+        })();
+        return true;
+      }
+      if (type === 'REMOVE_EXCLUSION') {
+        (async () => {
+          try {
+            const domain: string = normalizeHost(message.domain) || '';
+            const list = (await readExclusions()).filter((d) => d !== domain);
+            if (storage) await promisify<void>(storage.set, storage, { [EXCLUSIONS_KEY]: list });
+            setExclusionsInMemory(list);
+            sendResponse({ success: true, exclusions: list });
+          } catch (e) {
+            sendResponse({ success: false, error: String(e) });
+          }
+        })();
+        return true;
+      }
+      if (type === 'GET_STORAGE_USAGE') {
+        (async () => {
+          try {
+            if (!storage) {
+              sendResponse({ totalBytes: 0, websiteBytes: 0, settingsBytes: 0, cacheBytes: 0, quotaBytes: 0 });
+              return;
+            }
+            const all = await promisify<any>(storage.get, storage, null);
+            const keys = Object.keys(all || {});
+            const usageKeys = keys.filter((k) => k.startsWith('usage:'));
+            const settingsKeys = keys.filter((k) => k.startsWith('settings:'));
+            const cacheKeys = keys.filter((k) => k.startsWith('cache:'));
+
+            async function getBytes(keysOrNull: any): Promise<number> {
+              try {
+                if (typeof storage.getBytesInUse === 'function') {
+                  const v = await promisify<number>(storage.getBytesInUse, storage, keysOrNull);
+                  return typeof v === 'number' ? v : 0;
+                }
+              } catch {
+                // fall through to estimate
+              }
+              // Fallback: estimate using JSON size
+              if (!keysOrNull) return new Blob([JSON.stringify(all || {})]).size;
+              const obj: any = {};
+              for (const k of keysOrNull as string[]) obj[k] = all[k];
+              return new Blob([JSON.stringify(obj)]).size;
+            }
+
+            const [totalBytes, websiteBytes, settingsBytes, cacheBytes] = await Promise.all([
+              getBytes(null),
+              getBytes(usageKeys),
+              getBytes(settingsKeys),
+              getBytes(cacheKeys),
+            ]);
+
+            const quotaBytes = (api?.storage?.local && (api.storage.local as any).QUOTA_BYTES) || 0;
+            sendResponse({ totalBytes, websiteBytes, settingsBytes, cacheBytes, quotaBytes });
+          } catch (e) {
+            sendResponse({ totalBytes: 0, websiteBytes: 0, settingsBytes: 0, cacheBytes: 0, quotaBytes: 0 });
+          }
+        })();
+        return true;
+      }
+      if (type === 'EXPORT_DATA') {
+        (async () => {
+          try {
+            if (!storage) {
+              sendResponse({ success: true, data: { exportVersion: 1, exportedAt: new Date().toISOString(), days: {} } });
+              return;
+            }
+            const all = await promisify<any>(storage.get, storage, null);
+            const days: Record<string, any> = {};
+            for (const [k, v] of Object.entries(all || {})) {
+              if (k.startsWith('usage:')) days[k] = v;
+            }
+            sendResponse({ success: true, data: { exportVersion: 1, exportedAt: new Date().toISOString(), days } });
+          } catch (e) {
+            sendResponse({ success: false, error: String(e) });
+          }
+        })();
+        return true;
+      }
       if (type === 'RESET_DATA') {
         (async () => {
           try {
@@ -514,6 +682,7 @@ export default defineBackground(() => {
   (async () => {
     await initFocusedWindowAndActiveTab();
     await cleanupOldData();
+    await loadExclusions();
   })();
 
   // Expose service for debugging (development only)

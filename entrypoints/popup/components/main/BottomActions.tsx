@@ -18,7 +18,7 @@ export function BottomActions({ user, isAuthenticated, isLoading, onDetailedRepo
         disabled={isLoading}
       >
         <ExternalLink className="h-4 w-4" />
-        View Detailed Report
+        Settings and Report
       </Button>
       
       {isAuthenticated && user && (

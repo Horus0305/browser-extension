@@ -28,14 +28,37 @@ interface ReportsViewProps {
     averageSessionTime: number;
     mostActiveDay: string;
   };
+  daily?: Array<{ date: string; totalMs: number }>;
 }
 
-export function ReportsView({ websites, weeklyStats }: ReportsViewProps) {
+export function ReportsView({ websites, weeklyStats, daily }: ReportsViewProps) {
   const [selectedTimeRange, setSelectedTimeRange] = useState("week");
   const [showExportDialog, setShowExportDialog] = useState(false);
 
   const totalTime = websites.reduce((sum, site) => sum + site.timeSpent, 0);
   const totalVisits = websites.reduce((sum, site) => sum + site.visitCount, 0);
+
+  // Weekly trends data derived from daily range usage
+  const minDaysRequired = 3;
+  const weeklyLabels: string[] = Array.isArray(daily)
+    ? daily.map(d => new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }))
+    : [];
+  const weeklyHours: number[] = Array.isArray(daily)
+    ? daily.map(d => d.totalMs / (1000 * 60 * 60))
+    : [];
+  const nonZeroCount = weeklyHours.filter(h => h > 0).length;
+  const hasWeeklyData = nonZeroCount >= minDaysRequired;
+  const peakInfo = hasWeeklyData && weeklyHours.length
+    ? (() => {
+        let idx = 0; let max = -1;
+        weeklyHours.forEach((h, i) => { if (h > max) { max = h; idx = i; } });
+        return { label: weeklyLabels[idx], hours: weeklyHours[idx] };
+      })()
+    : null;
+  const avgHours = hasWeeklyData && weeklyHours.length
+    ? weeklyHours.reduce((a, b) => a + b, 0) / weeklyHours.length
+    : 0;
+  const daysNeeded = Math.max(0, minDaysRequired - nonZeroCount);
 
   return (
     <div className="space-y-6">
@@ -204,15 +227,37 @@ export function ReportsView({ websites, weeklyStats }: ReportsViewProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <WeeklyChart 
-                  data={[3.2, 4.5, 5.1, 4.8, 6.2, 7.8, 5.9]}
-                  labels={['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
-                  color="#3b82f6"
-                  height={240}
-                />
+                <div className="relative">
+                  {hasWeeklyData ? (
+                    <WeeklyChart 
+                      data={weeklyHours}
+                      labels={weeklyLabels}
+                      color="#3b82f6"
+                      height={240}
+                    />
+                  ) : (
+                    <div className="h-[240px] w-full rounded-md bg-muted/30" />
+                  )}
+                  {!hasWeeklyData && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+                      <div className="text-center">
+                        <div className="text-sm font-medium text-foreground">Not enough data yet</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          Collect at least {minDaysRequired} non-zero days ({nonZeroCount}/{minDaysRequired}). {daysNeeded > 0 ? `${daysNeeded} more day${daysNeeded > 1 ? 's' : ''} needed.` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <div className="flex items-center justify-between text-sm text-gray-600 pt-2">
-                  <span>Peak day: Saturday (7.8h)</span>
-                  <span>Average: 5.4h/day</span>
+                  {hasWeeklyData ? (
+                    <>
+                      <span>Peak day: {peakInfo?.label} ({(peakInfo?.hours || 0).toFixed(1)}h)</span>
+                      <span>Average: {avgHours.toFixed(1)}h/day</span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">We’ll show peak day and averages once enough data is collected.</span>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -231,17 +276,17 @@ export function ReportsView({ websites, weeklyStats }: ReportsViewProps) {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <HourlyChart 
-                  data={[
-                    0.1, 0.1, 0.05, 0.05, 0.05, 0.1, 0.3, 0.5, 0.7, 0.9, 1.0, 0.8,
-                    0.6, 0.7, 0.9, 1.0, 0.8, 0.6, 0.4, 0.3, 0.4, 0.5, 0.3, 0.2
-                  ]}
-                  color="#10b981"
-                  height={200}
-                />
+                <div className="relative">
+                  <div className="h-[200px] w-full rounded-md bg-muted/30" />
+                  <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+                    <div className="text-center">
+                      <div className="text-sm font-medium text-foreground">Not enough data yet</div>
+                      <div className="text-xs text-muted-foreground mt-1">Hourly pattern requires per-hour data.</div>
+                    </div>
+                  </div>
+                </div>
                 <div className="flex items-center justify-between text-sm text-gray-600 pt-2">
-                  <span>Peak hours: 10-11 AM, 3-4 PM</span>
-                  <span>Least active: 2-6 AM</span>
+                  <span className="text-xs text-muted-foreground">We’ll show peak/low hours once hourly data is available.</span>
                 </div>
               </div>
             </CardContent>
@@ -259,48 +304,14 @@ export function ReportsView({ websites, weeklyStats }: ReportsViewProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
-                {[
-                  { name: 'Development', current: 45, previous: 38, trend: 'up', color: 'blue' },
-                  { name: 'Social Media', current: 25, previous: 32, trend: 'down', color: 'pink' },
-                  { name: 'Entertainment', current: 20, previous: 18, trend: 'up', color: 'purple' },
-                  { name: 'News', current: 10, previous: 12, trend: 'down', color: 'orange' }
-                ].map((category) => (
-                  <div key={category.name} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-medium text-gray-900">{category.name}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600">{category.current}%</span>
-                        <div className={`flex items-center gap-1 text-xs ${
-                          category.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {category.trend === 'up' ? (
-                            <TrendingUp className="h-3 w-3" />
-                          ) : (
-                            <TrendingDown className="h-3 w-3" />
-                          )}
-                          {Math.abs(category.current - category.previous)}%
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 items-center">
-                      <div className="flex-1 bg-gray-200 rounded-full h-2">
-                        <div 
-                          className={`h-2 rounded-full bg-gradient-to-r ${
-                            category.color === 'blue' ? 'from-blue-400 to-blue-500' :
-                            category.color === 'pink' ? 'from-pink-400 to-pink-500' :
-                            category.color === 'purple' ? 'from-purple-400 to-purple-500' :
-                            'from-orange-400 to-orange-500'
-                          } transition-all duration-500`}
-                          style={{ width: `${category.current}%` }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-500 min-w-[60px]">
-                        vs {category.previous}% last week
-                      </span>
-                    </div>
+              <div className="relative">
+                <div className="h-40 w-full rounded-md bg-muted/30" />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-foreground">Not enough data yet</div>
+                    <div className="text-xs text-muted-foreground mt-1">Trends require multiple periods of category data.</div>
                   </div>
-                ))}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -317,55 +328,12 @@ export function ReportsView({ websites, weeklyStats }: ReportsViewProps) {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-green-100 to-green-200 flex items-center justify-center">
-                    <span className="text-2xl font-bold text-green-700">65%</span>
-                  </div>
-                  <h4 className="font-medium text-gray-900 mb-1">Productive Time</h4>
-                  <p className="text-sm text-gray-600">Work, learning, development</p>
-                  <div className="mt-2 text-xs text-green-600 flex items-center justify-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
-                    +8% from last week
-                  </div>
-                </div>
-                
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-orange-100 to-orange-200 flex items-center justify-center">
-                    <span className="text-2xl font-bold text-orange-700">25%</span>
-                  </div>
-                  <h4 className="font-medium text-gray-900 mb-1">Entertainment</h4>
-                  <p className="text-sm text-gray-600">Videos, gaming, social</p>
-                  <div className="mt-2 text-xs text-red-600 flex items-center justify-center gap-1">
-                    <TrendingDown className="h-3 w-3" />
-                    -3% from last week
-                  </div>
-                </div>
-                
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-3 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
-                    <span className="text-2xl font-bold text-blue-700">10%</span>
-                  </div>
-                  <h4 className="font-medium text-gray-900 mb-1">Information</h4>
-                  <p className="text-sm text-gray-600">News, research, reading</p>
-                  <div className="mt-2 text-xs text-blue-600 flex items-center justify-center gap-1">
-                    <TrendingUp className="h-3 w-3" />
-                    +2% from last week
-                  </div>
-                </div>
-              </div>
-              
-              <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
-                    <TrendingUp className="h-4 w-4 text-white" />
-                  </div>
-                  <div>
-                    <h5 className="font-medium text-blue-900 mb-1">Productivity Insight</h5>
-                    <p className="text-sm text-blue-800">
-                      Your productive browsing time has increased by 8% this week! You're spending more time on 
-                      development and learning resources. Keep up the great work!
-                    </p>
+              <div className="relative">
+                <div className="h-32 w-full rounded-md bg-muted/30" />
+                <div className="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-sm rounded-md">
+                  <div className="text-center">
+                    <div className="text-sm font-medium text-foreground">Not enough data yet</div>
+                    <div className="text-xs text-muted-foreground mt-1">We’ll surface insights once more history is available.</div>
                   </div>
                 </div>
               </div>
