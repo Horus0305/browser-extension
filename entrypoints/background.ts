@@ -1,6 +1,5 @@
 /**
- * Simplified background service for OAuth handling only
- * All tracking functionality removed
+ * Background service with OAuth handling and usage tracking
  */
 
 class BackgroundService {

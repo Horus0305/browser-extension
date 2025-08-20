@@ -1,9 +1,9 @@
 /**
- * Hooks index - exports all React hooks
+ * Hooks exports for the browser extension
  */
 
-// Appwrite hooks
-export { useAppwriteAuth, useAuthStatus, useAuthActions } from './useAppwriteAuth';
+// Auth hooks
+export * from './useAppwriteAuth';
 
 // Re-export types for convenience
 export type { AuthState, AuthActions } from './useAppwriteAuth';

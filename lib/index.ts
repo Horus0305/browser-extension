@@ -1,13 +1,13 @@
 /**
- * Main exports for the simplified browser extension library
+ * Main exports for the browser extension library
  */
-
-// Types
-export * from './types';
 
 // Utilities
 export * from './time-utils';
 export * from './utils';
+
+// Types
+export * from './types';
 
 // Hooks
 export * from './hooks/useAppwriteAuth';

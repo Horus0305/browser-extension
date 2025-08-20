@@ -1,9 +1,10 @@
 /**
- * React hooks for Appwrite authentication
+ * React hook for Appwrite authentication
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { appwriteAuth, AuthUser } from '../appwrite/AppwriteAuth';
+import { appwriteAuth } from '../appwrite/AppwriteAuth';
+import type { AuthUser } from '../appwrite/AppwriteAuth';
 
 export interface AuthState {
   user: AuthUser | null;
@@ -17,11 +18,7 @@ export interface AuthActions {
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
-  updatePassword: (newPassword: string, oldPassword: string) => Promise<void>;
-  recoverPassword: (email: string) => Promise<void>;
-  sendEmailVerification: () => Promise<void>;
   refreshSession: () => Promise<void>;
-  deleteAccount: () => Promise<void>;
   clearError: () => void;
   forceRefresh: () => void;
 }
@@ -39,71 +36,36 @@ export function useAppwriteAuth(): AuthState & AuthActions {
 
   // Initialize authentication on mount
   useEffect(() => {
+    let mounted = true;
+
     const initializeAuth = async () => {
       try {
         await appwriteAuth.initialize();
         
-        setState({
-          user: appwriteAuth.getCurrentUser(),
-          isAuthenticated: appwriteAuth.isAuthenticated(),
-          isLoading: false,
-          error: null
-        });
+        if (mounted) {
+          setState({
+            user: appwriteAuth.getCurrentUser(),
+            isAuthenticated: appwriteAuth.isAuthenticated(),
+            isLoading: false,
+            error: null
+          });
+        }
       } catch (error) {
-        console.error('Auth initialization failed:', error);
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: error instanceof Error ? error.message : 'Authentication failed'
-        }));
+        if (mounted) {
+          setState({
+            user: null,
+            isAuthenticated: false,
+            isLoading: false,
+            error: error instanceof Error ? error.message : 'Authentication initialization failed'
+          });
+        }
       }
     };
-
-    // Set up OAuth completion listener
-    const runtime = (globalThis as any).browser?.runtime || (globalThis as any).chrome?.runtime;
-    const oauthListener = (message: any) => {
-      if (message.type === 'OAUTH_SUCCESS') {
-        console.log('OAuth success received in hook');
-        // Refresh auth state after OAuth success
-        setTimeout(async () => {
-          try {
-            await appwriteAuth.handleOAuthCallback();
-            setState({
-              user: appwriteAuth.getCurrentUser(),
-              isAuthenticated: appwriteAuth.isAuthenticated(),
-              isLoading: false,
-              error: null
-            });
-          } catch (error) {
-            console.error('OAuth callback handling failed:', error);
-            setState(prev => ({
-              ...prev,
-              isLoading: false,
-              error: 'OAuth authentication failed'
-            }));
-          }
-        }, 500);
-      } else if (message.type === 'OAUTH_ERROR') {
-        console.error('OAuth error received in hook:', message.error);
-        setState(prev => ({
-          ...prev,
-          isLoading: false,
-          error: message.error || 'OAuth authentication failed'
-        }));
-      }
-    };
-
-    if (runtime?.onMessage?.addListener) {
-      runtime.onMessage.addListener(oauthListener);
-    }
 
     initializeAuth();
 
-    // Cleanup listener on unmount
     return () => {
-      if (runtime?.onMessage?.removeListener) {
-        runtime.onMessage.removeListener(oauthListener);
-      }
+      mounted = false;
     };
   }, []);
 
@@ -111,29 +73,20 @@ export function useAppwriteAuth(): AuthState & AuthActions {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      const user = await appwriteAuth.signIn(email, password);
+      await appwriteAuth.signIn(email, password);
       
       setState({
-        user,
-        isAuthenticated: true,
+        user: appwriteAuth.getCurrentUser(),
+        isAuthenticated: appwriteAuth.isAuthenticated(),
         isLoading: false,
         error: null
       });
-      
-      // Force a state update to ensure component re-renders
-      setTimeout(() => {
-        setState(prev => ({
-          ...prev,
-          user: appwriteAuth.getCurrentUser(),
-          isAuthenticated: appwriteAuth.isAuthenticated()
-        }));
-      }, 50);
-      
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Sign in failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Sign in failed'
+        error: errorMessage
       }));
       throw error;
     }
@@ -143,29 +96,20 @@ export function useAppwriteAuth(): AuthState & AuthActions {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
-      const user = await appwriteAuth.signUp(email, password, name);
+      await appwriteAuth.signUp(email, password, name);
       
       setState({
-        user,
-        isAuthenticated: true,
+        user: appwriteAuth.getCurrentUser(),
+        isAuthenticated: appwriteAuth.isAuthenticated(),
         isLoading: false,
         error: null
       });
-      
-      // Force a state update to ensure component re-renders
-      setTimeout(() => {
-        setState(prev => ({
-          ...prev,
-          user: appwriteAuth.getCurrentUser(),
-          isAuthenticated: appwriteAuth.isAuthenticated()
-        }));
-      }, 50);
-      
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Sign up failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Sign up failed'
+        error: errorMessage
       }));
       throw error;
     }
@@ -177,19 +121,18 @@ export function useAppwriteAuth(): AuthState & AuthActions {
     try {
       await appwriteAuth.signInWithGoogle();
       
-      // After OAuth completes, update the auth state
-      const user = appwriteAuth.getCurrentUser();
       setState({
-        user,
+        user: appwriteAuth.getCurrentUser(),
         isAuthenticated: appwriteAuth.isAuthenticated(),
         isLoading: false,
         error: null
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Google sign in failed';
       setState(prev => ({
         ...prev,
         isLoading: false,
-        error: error instanceof Error ? error.message : 'Google sign in failed'
+        error: errorMessage
       }));
       throw error;
     }
@@ -217,42 +160,6 @@ export function useAppwriteAuth(): AuthState & AuthActions {
     }
   }, []);
 
-  const updatePassword = useCallback(async (newPassword: string, oldPassword: string) => {
-    setState(prev => ({ ...prev, error: null }));
-    
-    try {
-      await appwriteAuth.updatePassword(newPassword, oldPassword);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Password update failed';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      throw error;
-    }
-  }, []);
-
-  const recoverPassword = useCallback(async (email: string) => {
-    setState(prev => ({ ...prev, error: null }));
-    
-    try {
-      await appwriteAuth.recoverPassword(email);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Password recovery failed';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      throw error;
-    }
-  }, []);
-
-  const sendEmailVerification = useCallback(async () => {
-    setState(prev => ({ ...prev, error: null }));
-    
-    try {
-      await appwriteAuth.sendEmailVerification();
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Email verification failed';
-      setState(prev => ({ ...prev, error: errorMessage }));
-      throw error;
-    }
-  }, []);
-
   const refreshSession = useCallback(async () => {
     try {
       await appwriteAuth.refreshSession();
@@ -270,28 +177,6 @@ export function useAppwriteAuth(): AuthState & AuthActions {
         isLoading: false,
         error: error instanceof Error ? error.message : 'Session refresh failed'
       });
-      throw error;
-    }
-  }, []);
-
-  const deleteAccount = useCallback(async () => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
-    try {
-      await appwriteAuth.deleteAccount();
-      
-      setState({
-        user: null,
-        isAuthenticated: false,
-        isLoading: false,
-        error: null
-      });
-    } catch (error) {
-      setState(prev => ({
-        ...prev,
-        isLoading: false,
-        error: error instanceof Error ? error.message : 'Account deletion failed'
-      }));
       throw error;
     }
   }, []);
@@ -314,11 +199,7 @@ export function useAppwriteAuth(): AuthState & AuthActions {
     signUp,
     signInWithGoogle,
     signOut,
-    updatePassword,
-    recoverPassword,
-    sendEmailVerification,
     refreshSession,
-    deleteAccount,
     clearError,
     forceRefresh
   };
