@@ -114,13 +114,34 @@ function App() {
     };
   }, []);
 
-  const handleDetailedReport = () => {
+  const handleDetailedReport = async () => {
     const browserAPI = (globalThis as any).browser || (globalThis as any).chrome;
-    if (browserAPI?.tabs?.create && browserAPI?.runtime?.getURL) {
-      browserAPI.tabs.create({ 
-        url: browserAPI.runtime.getURL('analytics.html') 
-      });
+    const tabs = browserAPI?.tabs;
+    const runtime = browserAPI?.runtime;
+    if (!tabs?.create || !runtime?.getURL) return;
+
+    // Try reading cached subscription status
+    let isProCached: boolean | undefined = undefined;
+    try {
+      const storage = browserAPI?.storage?.local;
+      if (storage?.get) {
+        if ((globalThis as any).browser) {
+          const res = await storage.get(['sub:isPro']);
+          const v = res?.['sub:isPro'];
+          if (typeof v === 'boolean') isProCached = v;
+        } else {
+          const res = await new Promise<any>((resolve) => storage.get(['sub:isPro'], resolve));
+          const v = res?.['sub:isPro'];
+          if (typeof v === 'boolean') isProCached = v;
+        }
+      }
+    } catch (e) {
+      // ignore and fallback
     }
+
+    // If cache is missing/unknown, default to settings to avoid sending Pro users to pricing.
+    const tabParam = isProCached === false ? 'pricing' : 'settings';
+    tabs.create({ url: runtime.getURL(`analytics.html?tab=${tabParam}`) });
   };
 
   const handleSignOut = async () => {

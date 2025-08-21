@@ -15,9 +15,10 @@ interface SettingsViewProps {
   user: any;
   websites: WebsiteUsage[];
   daily: Array<{ date: string; totalMs: number }>;
+  isPro?: boolean;
 }
 
-export function SettingsView({ user, websites, daily }: SettingsViewProps) {
+export function SettingsView({ user, websites, daily, isPro }: SettingsViewProps) {
   const [activeTab, setActiveTab] = useState("account");
 
   return (
@@ -59,7 +60,7 @@ export function SettingsView({ user, websites, daily }: SettingsViewProps) {
         </div>
 
         <TabsContent value="account" className="space-y-6">
-          <AccountSettings user={user} websites={websites} daily={daily} />
+          <AccountSettings user={user} websites={websites} daily={daily} isPro={isPro} />
         </TabsContent>
 
         <TabsContent value="privacy" className="space-y-6">

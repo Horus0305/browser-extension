@@ -5,6 +5,8 @@ import { AuthRequired, LoadingView } from "./components/shared";
 import { DashboardView } from "./components/dashboard";
 import { ReportsView } from "./components/reports";
 import { SettingsView } from "./components/settings";
+import { Pricing } from "./components/settings/Pricing";
+import { Crown } from "lucide-react";
 import type { WebsiteUsage } from "@/lib/types";
 import type { Category } from "@/lib/categories";
 
@@ -48,6 +50,8 @@ function App() {
     mostActiveDay: "",
   });
   const [comparisonData, setComparisonData] = useState<Array<{ label: string; currentMs: number; previousMs: number }>>([]);
+  // TODO: Wire isPro from Appwrite subscription status
+  const [isPro, setIsPro] = useState<boolean>(false);
 
   function getRuntime(): any {
     return (globalThis as any).browser?.runtime || (globalThis as any).chrome?.runtime;
@@ -75,6 +79,15 @@ function App() {
   }
 
   useEffect(() => {
+    // Initialize tab from URL if provided
+    try {
+      const params = new URLSearchParams(globalThis.location?.search || "");
+      const tab = params.get("tab");
+      if (tab && ["dashboard", "reports", "settings", "pricing"].includes(tab)) {
+        setActiveTab(tab);
+      }
+    } catch {}
+
     let cancelled = false;
     async function fetchAnalytics() {
       try {
@@ -233,6 +246,13 @@ function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // Pro users should not stay on the Pricing view; redirect to Settings
+  useEffect(() => {
+    if (isPro && activeTab === 'pricing') {
+      setActiveTab('settings');
+    }
+  }, [isPro, activeTab]);
+
   if (isLoading) {
     return <LoadingView />;
   }
@@ -285,6 +305,17 @@ function App() {
               </svg>
               <span className="text-sm font-medium">Settings</span>
             </Button>
+
+            {!isPro && (
+              <Button
+                variant={activeTab === "pricing" ? "default" : "ghost"}
+                className="w-full flex items-center justify-start gap-3 h-11 px-3"
+                onClick={() => setActiveTab("pricing")}
+              >
+                <Crown className="w-5 h-5 flex-shrink-0" />
+                <span className="text-sm font-medium">Pricing</span>
+              </Button>
+            )}
           </nav>
 
           {/* User Profile */}
@@ -299,7 +330,7 @@ function App() {
                 <p className="text-sm font-medium text-foreground truncate">
                   {user?.name || 'Aniket'}
                 </p>
-                <p className="text-xs text-muted-foreground">Free Account</p>
+                <p className="text-xs text-muted-foreground">{isPro ? 'Pro Account' : 'Free Account'}</p>
               </div>
             </div>
             <Button 
@@ -319,7 +350,8 @@ function App() {
 
       {/* Main Content - with left margin to account for fixed sidebar */}
       <div className="flex-1 ml-64 overflow-auto bg-background">
-        <main className="p-6">
+        <main className="p-6 relative">
+          <div className={`${!isPro && activeTab !== 'pricing' ? 'pointer-events-none filter blur-sm' : ''}`}>
           {activeTab === "dashboard" && (
             analyticsLoading ? (
               <LoadingView />
@@ -349,7 +381,33 @@ function App() {
           )}
 
           {activeTab === "settings" && (
-            <SettingsView user={user} websites={rangeWebsites} daily={rangeDaily} />
+            <SettingsView user={user} websites={rangeWebsites} daily={rangeDaily} isPro={isPro} />
+          )}
+
+          {activeTab === "pricing" && (
+            <Pricing onUpgrade={() => {
+              // TODO: Implement Stripe checkout; post-purchase set isPro true and sync to Appwrite
+            }} />
+          )}
+          </div>
+
+          {/* Overlay for Free users on non-pricing tabs */}
+          {!isPro && activeTab !== 'pricing' && (
+            <div className="absolute inset-0 z-10 bg-background/70 backdrop-blur-sm flex items-center justify-center p-6">
+              <div className="max-w-md w-full bg-card border border-border rounded-lg p-6 shadow-sm text-center">
+                <div className="flex items-center justify-center mb-3">
+                  <Crown className="h-6 w-6 text-yellow-500" />
+                </div>
+                <h2 className="text-xl font-semibold mb-2">Unlock Pro Features</h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Get cross-device sync, advanced reports, and more. Upgrade to Pro to access this section.
+                </p>
+                <div className="flex gap-2 justify-center">
+                  <Button onClick={() => setActiveTab('pricing')}>Buy Premium</Button>
+                  <Button variant="outline" onClick={() => setActiveTab('pricing')}>See Pricing</Button>
+                </div>
+              </div>
+            </div>
           )}
         </main>
       </div>

@@ -17,9 +17,10 @@ interface AccountSettingsProps {
   user: any;
   websites: WebsiteUsage[];
   daily: Array<{ date: string; totalMs: number }>;
+  isPro?: boolean;
 }
 
-export function AccountSettings({ user, websites, daily }: AccountSettingsProps) {
+export function AccountSettings({ user, websites, daily, isPro }: AccountSettingsProps) {
   const stats = useMemo(() => {
     const totalMs = (daily || []).reduce((a, d) => a + (d.totalMs || 0), 0);
     const totalHours = totalMs / 3600000;
@@ -51,8 +52,12 @@ export function AccountSettings({ user, websites, daily }: AccountSettingsProps)
               <div className="flex items-center gap-2 mb-2">
                 <h3 className="text-xl font-semibold">{user?.name || 'User'}</h3>
                 <Badge variant="secondary" className="flex items-center gap-1">
-                  <Crown className="h-3 w-3" />
-                  Pro
+                  {isPro ? (
+                    <Crown className="h-3 w-3" />
+                  ) : (
+                    <Shield className="h-3 w-3" />
+                  )}
+                  {isPro ? 'Pro' : 'Free'}
                 </Badge>
               </div>
               <div className="flex items-center gap-2 text-gray-600">
@@ -105,36 +110,52 @@ export function AccountSettings({ user, websites, daily }: AccountSettingsProps)
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
-                <Crown className="h-5 w-5 text-white" />
+          {isPro ? (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-blue-500 rounded-lg flex items-center justify-center">
+                    <Crown className="h-5 w-5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold">Pro Plan</h4>
+                    <p className="text-sm text-gray-600">Advanced analytics and unlimited tracking</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">$9.99/month</div>
+                  <div className="text-sm text-gray-600">Next billing: Jan 1, 2025</div>
+                </div>
               </div>
-              <div>
-                <h4 className="font-semibold">Pro Plan</h4>
-                <p className="text-sm text-gray-600">Advanced analytics and unlimited tracking</p>
+              <div className="mt-4 pt-4 border-t">
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm">Change Plan</Button>
+                  <Button variant="outline" size="sm">Billing History</Button>
+                  <Button variant="outline" size="sm">Cancel Subscription</Button>
+                </div>
               </div>
-            </div>
-            
-            <div className="text-right">
-              <div className="font-semibold">$9.99/month</div>
-              <div className="text-sm text-gray-600">Next billing: Jan 1, 2025</div>
-            </div>
-          </div>
-          
-          <div className="mt-4 pt-4 border-t">
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm">
-                Change Plan
-              </Button>
-              <Button variant="outline" size="sm">
-                Billing History
-              </Button>
-              <Button variant="outline" size="sm">
-                Cancel Subscription
-              </Button>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-gray-200 rounded-lg flex items-center justify-center">
+                    <Shield className="h-5 w-5 text-gray-700" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold">Free Plan</h4>
+                    <p className="text-sm text-gray-600">Basic analytics with local storage</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="font-semibold">$0/month</div>
+                </div>
+              </div>
+              <div className="mt-4 pt-4 border-t">
+                <Button size="sm">Upgrade to Pro</Button>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
